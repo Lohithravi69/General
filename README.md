@@ -9,7 +9,7 @@ This repository contains a GitHub Actions workflow that commits exactly two file
 3. Provide two file paths that already exist in the repository.
 4. Set `delete_after_push` to `true` if you want the files removed after the commit.
 
-The workflow also runs automatically every day at `00:00 UTC`.
+The workflow also runs automatically every day at `9:00 AM India Standard Time` (`03:30 UTC`).
 
 The workflow will:
 
