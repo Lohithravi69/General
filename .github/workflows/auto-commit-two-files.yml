@@ -1,15 +1,17 @@
 name: Auto commit two files
 
 on:
+  schedule:
+    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       file_one:
-        description: First file path to commit
-        required: true
+        description: First file path to commit. Leave blank to use the daily generated file.
+        required: false
         type: string
       file_two:
-        description: Second file path to commit
-        required: true
+        description: Second file path to commit. Leave blank to use the daily generated file.
+        required: false
         type: string
       commit_message:
         description: Commit message for the add/update commit
@@ -39,19 +41,28 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Prepare scheduled files
+        if: ${{ github.event_name == 'schedule' }}
+        run: |
+          mkdir -p daily
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > daily/file-one.txt
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > daily/file-two.txt
+
       - name: Validate input paths
         env:
-          FILE_ONE: ${{ inputs.file_one }}
-          FILE_TWO: ${{ inputs.file_two }}
+          FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
+          FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
         run: |
+          test -n "$FILE_ONE"
+          test -n "$FILE_TWO"
           test -e "$FILE_ONE"
           test -e "$FILE_TWO"
 
       - name: Commit and push both files
         env:
-          FILE_ONE: ${{ inputs.file_one }}
-          FILE_TWO: ${{ inputs.file_two }}
-          COMMIT_MESSAGE: ${{ inputs.commit_message }}
+          FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
+          FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
+          COMMIT_MESSAGE: ${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}
         run: |
           git add "$FILE_ONE" "$FILE_TWO"
 
@@ -64,10 +75,10 @@ jobs:
           git push origin HEAD
 
       - name: Delete files and push cleanup commit
-        if: ${{ inputs.delete_after_push }}
+        if: ${{ github.event_name == 'schedule' || inputs.delete_after_push }}
         env:
-          FILE_ONE: ${{ inputs.file_one }}
-          FILE_TWO: ${{ inputs.file_two }}
+          FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
+          FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
         run: |
           git rm -f "$FILE_ONE" "$FILE_TWO"
 

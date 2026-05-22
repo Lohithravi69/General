@@ -9,11 +9,14 @@ This repository contains a GitHub Actions workflow that commits exactly two file
 3. Provide two file paths that already exist in the repository.
 4. Set `delete_after_push` to `true` if you want the files removed after the commit.
 
+The workflow also runs automatically every day at `00:00 UTC`.
+
 The workflow will:
 
 1. Stage the two paths you provide.
 2. Create and push a commit for those files.
 3. Optionally delete both files and push a second cleanup commit.
+4. On the scheduled run, generate two temporary files, commit them, and then delete them in a cleanup commit.
 
 ## Notes
 
