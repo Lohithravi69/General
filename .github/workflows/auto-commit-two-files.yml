@@ -1,0 +1,80 @@
+name: Auto commit two files
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_one:
+        description: First file path to commit
+        required: true
+        type: string
+      file_two:
+        description: Second file path to commit
+        required: true
+        type: string
+      commit_message:
+        description: Commit message for the add/update commit
+        required: false
+        default: "chore: commit two files"
+        type: string
+      delete_after_push:
+        description: Remove the two files after the commit and push a cleanup commit
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  commit_two_files:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate input paths
+        env:
+          FILE_ONE: ${{ inputs.file_one }}
+          FILE_TWO: ${{ inputs.file_two }}
+        run: |
+          test -e "$FILE_ONE"
+          test -e "$FILE_TWO"
+
+      - name: Commit and push both files
+        env:
+          FILE_ONE: ${{ inputs.file_one }}
+          FILE_TWO: ${{ inputs.file_two }}
+          COMMIT_MESSAGE: ${{ inputs.commit_message }}
+        run: |
+          git add "$FILE_ONE" "$FILE_TWO"
+
+          if git diff --cached --quiet; then
+            echo "No staged changes found."
+            exit 0
+          fi
+
+          git commit -m "$COMMIT_MESSAGE"
+          git push origin HEAD
+
+      - name: Delete files and push cleanup commit
+        if: ${{ inputs.delete_after_push }}
+        env:
+          FILE_ONE: ${{ inputs.file_one }}
+          FILE_TWO: ${{ inputs.file_two }}
+        run: |
+          git rm -f "$FILE_ONE" "$FILE_TWO"
+
+          if git diff --cached --quiet; then
+            echo "No cleanup changes found."
+            exit 0
+          fi
+
+          git commit -m "chore: remove committed files"
+          git push origin HEAD
