@@ -2,27 +2,29 @@ name: Auto commit two files
 
 on:
   schedule:
-    - cron: "30 3 * * *"
+    - cron: '30 3 * * *'
   workflow_dispatch:
     inputs:
       file_one:
-        description: First file path to commit. Leave blank to use the daily generated file.
+        description: 'First file path to commit. Leave blank to generate daily files.'
         required: false
         type: string
+        default: ''
       file_two:
-        description: Second file path to commit. Leave blank to use the daily generated file.
+        description: 'Second file path to commit. Leave blank to generate daily files.'
         required: false
         type: string
+        default: ''
       commit_message:
-        description: Commit message for the add/update commit
+        description: 'Commit message for the add/update commit'
         required: false
-        default: "chore: commit two files"
         type: string
+        default: 'chore: commit two files'
       delete_after_push:
-        description: Remove the two files after the commit and push a cleanup commit
+        description: 'Remove the two files after the commit and push a cleanup commit'
         required: false
-        default: false
         type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -32,159 +34,104 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TARGET_BRANCH: ${{ github.ref_name }}
+      FILE_ONE: ${{ github.event.inputs.file_one }}
+      FILE_TWO: ${{ github.event.inputs.file_two }}
+      COMMIT_MESSAGE: ${{ github.event.inputs.commit_message }}
+      DELETE_AFTER_PUSH: ${{ github.event.inputs.delete_after_push }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           persist-credentials: true
+          fetch-depth: 0
 
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Prepare scheduled files
-        if: ${{ github.event_name == 'schedule' }}
+      - name: Prepare files to commit
+        id: prepare
         run: |
-          mkdir -p daily
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > daily/file-one.txt
-          date -u +"%Y-%m-%dT%H:%M:%SZ" > daily/file-two.txt
+          set -euo pipefail
+          FILES=()
 
-      - name: Validate input paths
-        env:
-          FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
-          FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
+          # If both inputs are blank, generate daily files (works for schedule and manual blank dispatch)
+          if [ -z "${FILE_ONE:-}" ] && [ -z "${FILE_TWO:-}" ]; then
+            mkdir -p daily
+            F1="daily/file-one-$(date +%Y-%m-%d).txt"
+            F2="daily/file-two-$(date +%Y-%m-%d).txt"
+            echo "generated at $(date -u)" > "$F1"
+            echo "generated at $(date -u)" > "$F2"
+            FILES+=("$F1" "$F2")
+          else
+            # require both provided or both blank
+            if [ -z "${FILE_ONE:-}" ] || [ -z "${FILE_TWO:-}" ]; then
+              echo "Error: provide both file_one and file_two, or leave both blank to generate daily files." >&2
+              exit 1
+            fi
+            # ensure parent directories exist and update the files so there's a change
+            mkdir -p "$(dirname "$FILE_ONE")"
+            mkdir -p "$(dirname "$FILE_TWO")"
+            echo "updated at $(date -u)" > "$FILE_ONE"
+            echo "updated at $(date -u)" > "$FILE_TWO"
+            FILES+=("$FILE_ONE" "$FILE_TWO")
+          fi
+
+          echo "FILES=${FILES[*]}" >> "$GITHUB_OUTPUT"
+          echo "Prepared files: ${FILES[*]}"
+
+      - name: Commit and push files
+        id: commit
         run: |
-          test -n "$FILE_ONE"
-          test -n "$FILE_TWO"
-          test -e "$FILE_ONE"
-          test -e "$FILE_TWO"
+          set -euo pipefail
+          IFS=' ' read -r -a FILES <<< "${{ steps.prepare.outputs.FILES }}"
 
-      - name: Commit and push both files
-        env:
-          FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
-          FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
-          COMMIT_MESSAGE: "${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}"
-        run: |
-          docker run --rm \
-            -e FILE_ONE="$FILE_ONE" \
-            -e FILE_TWO="$FILE_TWO" \
-            -e COMMIT_MESSAGE="$COMMIT_MESSAGE" \
-            -e TARGET_BRANCH="$TARGET_BRANCH" \
-            -e GITHUB_ENV="$GITHUB_ENV" \
-            -e GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" \
-            -e GITHUB_SERVER_URL="$GITHUB_SERVER_URL" \
-            -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
-            -v "$GITHUB_WORKSPACE:/workspace" \
-            -v "$GITHUB_ENV:$GITHUB_ENV" \
-            -v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" \
-            -w /workspace \
-            --entrypoint sh \
-            alpine/git:2.45.2 -c '
-              git config --global --add safe.directory /workspace
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${FILES[@]}"
 
-              git add "$FILE_ONE" "$FILE_TWO"
-
-              if git diff --cached --quiet; then
-                echo "No staged changes found."
-                exit 0
-              fi
-
-              git commit -m "$COMMIT_MESSAGE"
-              git push origin HEAD:"$TARGET_BRANCH"
-              echo "DID_COMMIT=true" >> "$GITHUB_ENV"
-              COMMIT_SHA="$(git rev-parse HEAD)"
-              COMMIT_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$COMMIT_SHA"
-              echo "Committed files: $FILE_ONE, $FILE_TWO"
-              echo "Commit URL: $COMMIT_URL"
-              {
-                echo "### Auto commit created"
-                echo "- Branch: $TARGET_BRANCH"
-                echo "- Files: $FILE_ONE, $FILE_TWO"
-                echo "- Commit: [$COMMIT_SHA]($COMMIT_URL)"
-              } >> "$GITHUB_STEP_SUMMARY"
-            '
-
-      - name: Report committed files
-        env:
-          FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
-          FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
-          COMMIT_MESSAGE: "${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}"
-        run: |
-          if [ "${DID_COMMIT:-}" != "true" ]; then
-            echo "No new commit was created."
+          if git diff --cached --quiet; then
+            echo "No staged changes found."
+            echo "DID_COMMIT=false" >> "$GITHUB_ENV"
             exit 0
           fi
 
-          COMMIT_SHA="$(git rev-parse HEAD)"
-          COMMIT_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$COMMIT_SHA"
+          git commit -m "$COMMIT_MESSAGE"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
 
+          echo "DID_COMMIT=true" >> "$GITHUB_ENV"
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "COMMIT_SHA=$COMMIT_SHA" >> "$GITHUB_ENV"
+          echo "COMMIT_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$COMMIT_SHA" >> "$GITHUB_ENV"
+
+      - name: Report committed files
+        if: env.DID_COMMIT == 'true'
+        run: |
           echo "::notice title=Auto commit created::$COMMIT_MESSAGE"
           {
             echo "### Auto commit created"
             echo "- Branch: $TARGET_BRANCH"
-            echo "- Files: $FILE_ONE, $FILE_TWO"
+            echo "- Files: ${{ steps.prepare.outputs.FILES }}"
             echo "- Commit: [$COMMIT_SHA]($COMMIT_URL)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Delete files and push cleanup commit
-        if: ${{ github.event_name == 'schedule' || inputs.delete_after_push }}
-        env:
-          FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
-          FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
+      - name: Optional cleanup (remove generated files)
+        if: env.DID_COMMIT == 'true' && env.DELETE_AFTER_PUSH == 'true'
         run: |
-          docker run --rm \
-            -e FILE_ONE="$FILE_ONE" \
-            -e FILE_TWO="$FILE_TWO" \
-            -e TARGET_BRANCH="$TARGET_BRANCH" \
-            -e GITHUB_ENV="$GITHUB_ENV" \
-            -e GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" \
-            -e GITHUB_SERVER_URL="$GITHUB_SERVER_URL" \
-            -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
-            -v "$GITHUB_WORKSPACE:/workspace" \
-            -v "$GITHUB_ENV:$GITHUB_ENV" \
-            -v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" \
-            -w /workspace \
-            --entrypoint sh \
-            alpine/git:2.45.2 -c '
-              git config --global --add safe.directory /workspace
-
-              git rm -f "$FILE_ONE" "$FILE_TWO"
-
-              if git diff --cached --quiet; then
-                echo "No cleanup changes found."
-                exit 0
-              fi
-
-              git commit -m "chore: remove committed files"
-              git push origin HEAD:"$TARGET_BRANCH"
-              echo "DID_CLEANUP=true" >> "$GITHUB_ENV"
-              CLEANUP_SHA="$(git rev-parse HEAD)"
-              CLEANUP_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$CLEANUP_SHA"
-              echo "Cleanup commit created: $CLEANUP_SHA"
-              {
-                echo "### Cleanup commit created"
-                echo "- Branch: $TARGET_BRANCH"
-                echo "- Commit: [$CLEANUP_SHA]($CLEANUP_URL)"
-              } >> "$GITHUB_STEP_SUMMARY"
-            '
-
-      - name: Report cleanup commit
-        if: ${{ github.event_name == 'schedule' || inputs.delete_after_push }}
-        run: |
-          if [ "${DID_CLEANUP:-}" != "true" ]; then
-            echo "No cleanup commit was created."
+          set -euo pipefail
+          IFS=' ' read -r -a FILES <<< "${{ steps.prepare.outputs.FILES }}"
+          for f in "${FILES[@]}"; do
+            if [[ "$f" == daily/* ]]; then
+              git rm -f "$f" || true
+            fi
+          done
+          if git diff --cached --quiet; then
+            echo "No cleanup changes"
             exit 0
           fi
-
-          CLEANUP_SHA="$(git rev-parse HEAD)"
-          CLEANUP_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$CLEANUP_SHA"
-
-          echo "::notice title=Cleanup commit created::Removed the committed files"
-          {
-            echo "### Cleanup commit created"
-            echo "- Branch: $TARGET_BRANCH"
-            echo "- Commit: [$CLEANUP_SHA]($CLEANUP_URL)"
-          } >> "$GITHUB_STEP_SUMMARY"
+          git commit -m "chore: cleanup generated files"
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          echo "DID_CLEANUP=true" >> "$GITHUB_ENV"
+          CLEANUP_SHA=$(git rev-parse HEAD)
+          echo "CLEANUP_COMMIT_SHA=$CLEANUP_SHA" >> "$GITHUB_ENV"
+          echo "CLEANUP_COMMIT_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$CLEANUP_SHA" >> "$GITHUB_ENV"
