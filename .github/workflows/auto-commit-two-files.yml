@@ -30,6 +30,8 @@ permissions:
 jobs:
   commit_two_files:
     runs-on: ubuntu-latest
+    env:
+      TARGET_BRANCH: ${{ github.ref_name }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -64,15 +66,68 @@ jobs:
           FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
           COMMIT_MESSAGE: ${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}
         run: |
-          git add "$FILE_ONE" "$FILE_TWO"
+          docker run --rm \
+            -e FILE_ONE="$FILE_ONE" \
+            -e FILE_TWO="$FILE_TWO" \
+            -e COMMIT_MESSAGE="$COMMIT_MESSAGE" \
+            -e TARGET_BRANCH="$TARGET_BRANCH" \
+            -e GITHUB_ENV="$GITHUB_ENV" \
+            -e GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" \
+            -e GITHUB_SERVER_URL="$GITHUB_SERVER_URL" \
+            -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$GITHUB_ENV:$GITHUB_ENV" \
+            -v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" \
+            -w /workspace \
+            alpine/git:2.45.2 \
+            sh -euc '
+              git config --global --add safe.directory /workspace
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if git diff --cached --quiet; then
-            echo "No staged changes found."
+              git add "$FILE_ONE" "$FILE_TWO"
+
+              if git diff --cached --quiet; then
+                echo "No staged changes found."
+                exit 0
+              fi
+
+              git commit -m "$COMMIT_MESSAGE"
+              git push origin HEAD:"$TARGET_BRANCH"
+              echo "DID_COMMIT=true" >> "$GITHUB_ENV"
+              COMMIT_SHA="$(git rev-parse HEAD)"
+              COMMIT_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$COMMIT_SHA"
+              echo "Committed files: $FILE_ONE, $FILE_TWO"
+              echo "Commit URL: $COMMIT_URL"
+              {
+                echo "### Auto commit created"
+                echo "- Branch: $TARGET_BRANCH"
+                echo "- Files: $FILE_ONE, $FILE_TWO"
+                echo "- Commit: [$COMMIT_SHA]($COMMIT_URL)"
+              } >> "$GITHUB_STEP_SUMMARY"
+            '
+
+      - name: Report committed files
+        env:
+          FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
+          FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
+          COMMIT_MESSAGE: ${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}
+        run: |
+          if [ "${DID_COMMIT:-}" != "true" ]; then
+            echo "No new commit was created."
             exit 0
           fi
 
-          git commit -m "$COMMIT_MESSAGE"
-          git push origin HEAD
+          COMMIT_SHA="$(git rev-parse HEAD)"
+          COMMIT_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$COMMIT_SHA"
+
+          echo "::notice title=Auto commit created::$COMMIT_MESSAGE"
+          {
+            echo "### Auto commit created"
+            echo "- Branch: $TARGET_BRANCH"
+            echo "- Files: $FILE_ONE, $FILE_TWO"
+            echo "- Commit: [$COMMIT_SHA]($COMMIT_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Delete files and push cleanup commit
         if: ${{ github.event_name == 'schedule' || inputs.delete_after_push }}
@@ -80,12 +135,56 @@ jobs:
           FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
           FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
         run: |
-          git rm -f "$FILE_ONE" "$FILE_TWO"
+          docker run --rm \
+            -e FILE_ONE="$FILE_ONE" \
+            -e FILE_TWO="$FILE_TWO" \
+            -e TARGET_BRANCH="$TARGET_BRANCH" \
+            -e GITHUB_ENV="$GITHUB_ENV" \
+            -e GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" \
+            -e GITHUB_SERVER_URL="$GITHUB_SERVER_URL" \
+            -e GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$GITHUB_ENV:$GITHUB_ENV" \
+            -v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" \
+            -w /workspace \
+            alpine/git:2.45.2 \
+            sh -euc '
+              git config --global --add safe.directory /workspace
 
-          if git diff --cached --quiet; then
-            echo "No cleanup changes found."
+              git rm -f "$FILE_ONE" "$FILE_TWO"
+
+              if git diff --cached --quiet; then
+                echo "No cleanup changes found."
+                exit 0
+              fi
+
+              git commit -m "chore: remove committed files"
+              git push origin HEAD:"$TARGET_BRANCH"
+              echo "DID_CLEANUP=true" >> "$GITHUB_ENV"
+              CLEANUP_SHA="$(git rev-parse HEAD)"
+              CLEANUP_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$CLEANUP_SHA"
+              echo "Cleanup commit created: $CLEANUP_SHA"
+              {
+                echo "### Cleanup commit created"
+                echo "- Branch: $TARGET_BRANCH"
+                echo "- Commit: [$CLEANUP_SHA]($CLEANUP_URL)"
+              } >> "$GITHUB_STEP_SUMMARY"
+            '
+
+      - name: Report cleanup commit
+        if: ${{ github.event_name == 'schedule' || inputs.delete_after_push }}
+        run: |
+          if [ "${DID_CLEANUP:-}" != "true" ]; then
+            echo "No cleanup commit was created."
             exit 0
           fi
 
-          git commit -m "chore: remove committed files"
-          git push origin HEAD
+          CLEANUP_SHA="$(git rev-parse HEAD)"
+          CLEANUP_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$CLEANUP_SHA"
+
+          echo "::notice title=Cleanup commit created::Removed the committed files"
+          {
+            echo "### Cleanup commit created"
+            echo "- Branch: $TARGET_BRANCH"
+            echo "- Commit: [$CLEANUP_SHA]($CLEANUP_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
