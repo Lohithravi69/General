@@ -64,7 +64,7 @@ jobs:
         env:
           FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
           FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
-          COMMIT_MESSAGE: ${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}
+          COMMIT_MESSAGE: "${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}"
         run: |
           docker run --rm \
             -e FILE_ONE="$FILE_ONE" \
@@ -111,7 +111,7 @@ jobs:
         env:
           FILE_ONE: ${{ github.event_name == 'schedule' && 'daily/file-one.txt' || inputs.file_one }}
           FILE_TWO: ${{ github.event_name == 'schedule' && 'daily/file-two.txt' || inputs.file_two }}
-          COMMIT_MESSAGE: ${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}
+          COMMIT_MESSAGE: "${{ github.event_name == 'schedule' && 'chore: daily auto commit' || inputs.commit_message }}"
         run: |
           if [ "${DID_COMMIT:-}" != "true" ]; then
             echo "No new commit was created."
