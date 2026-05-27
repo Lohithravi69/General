@@ -79,8 +79,8 @@ jobs:
             -v "$GITHUB_ENV:$GITHUB_ENV" \
             -v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" \
             -w /workspace \
-            alpine/git:2.45.2 \
-            sh -euc '
+            --entrypoint sh \
+            alpine/git:2.45.2 -c '
               git config --global --add safe.directory /workspace
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -147,8 +147,8 @@ jobs:
             -v "$GITHUB_ENV:$GITHUB_ENV" \
             -v "$GITHUB_STEP_SUMMARY:$GITHUB_STEP_SUMMARY" \
             -w /workspace \
-            alpine/git:2.45.2 \
-            sh -euc '
+            --entrypoint sh \
+            alpine/git:2.45.2 -c '
               git config --global --add safe.directory /workspace
 
               git rm -f "$FILE_ONE" "$FILE_TWO"
