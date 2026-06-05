@@ -5,6 +5,16 @@ on:
     - cron: '30 3 * * *'
   workflow_dispatch:
     inputs:
+      author_name:
+        description: 'Optional author name to use for the commit (falls back to secret or actor)'
+        required: false
+        type: string
+        default: ''
+      author_email:
+        description: 'Optional author email to use for the commit (falls back to secret)'
+        required: false
+        type: string
+        default: ''
       file_one:
         description: 'First file path to commit. Leave blank to generate daily files.'
         required: false
@@ -36,8 +46,12 @@ jobs:
       TARGET_BRANCH: ${{ github.ref_name }}
       FILE_ONE: ${{ github.event.inputs.file_one }}
       FILE_TWO: ${{ github.event.inputs.file_two }}
-      COMMIT_MESSAGE: ${{ github.event.inputs.commit_message }}
+      COMMIT_MESSAGE: ${{ github.event.inputs.commit_message || 'chore: commit two files' }}
       DELETE_AFTER_PUSH: ${{ github.event.inputs.delete_after_push }}
+      AUTHOR_NAME: ${{ github.event.inputs.author_name || secrets.COMMIT_AUTHOR_NAME || github.actor }}
+      AUTHOR_EMAIL: ${{ github.event.inputs.author_email || secrets.COMMIT_AUTHOR_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 
     steps:
       - name: Check out repository
@@ -48,8 +62,18 @@ jobs:
 
       - name: Configure git identity
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Set name and email independently so partial inputs or secrets work
+          if [ -n "${AUTHOR_NAME:-}" ]; then
+            git config user.name "$AUTHOR_NAME"
+          else
+            git config user.name "github-actions[bot]"
+          fi
+
+          if [ -n "${AUTHOR_EMAIL:-}" ]; then
+            git config user.email "$AUTHOR_EMAIL"
+          else
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+          fi
 
       - name: Prepare files to commit
         id: prepare
@@ -86,9 +110,21 @@ jobs:
         id: commit
         run: |
           set -euo pipefail
+          # Ensure we have a non-empty commit message (fallback when input is empty)
+          if [ -z "${COMMIT_MESSAGE:-}" ]; then
+            COMMIT_MESSAGE="chore: commit two files"
+          fi
+
+          # Debug: show commit message and length
+          echo "COMMIT_MESSAGE='${COMMIT_MESSAGE}'"
+          echo "COMMIT_MESSAGE_LEN=${#COMMIT_MESSAGE}"
+
           IFS=' ' read -r -a FILES <<< "${{ steps.prepare.outputs.FILES }}"
+          echo "Prepared files: ${FILES[*]}"
 
           git add "${FILES[@]}"
+
+          echo "Staged files:"; git diff --cached --name-only || true
 
           if git diff --cached --quiet; then
             echo "No staged changes found."
@@ -96,7 +132,14 @@ jobs:
             exit 0
           fi
 
-          git commit -m "$COMMIT_MESSAGE"
+          # Attempt commit and capture output on failure for diagnostics
+          if ! git commit -m "$COMMIT_MESSAGE"; then
+            echo "git commit failed — showing git status and diff:" >&2
+            git status --porcelain --untracked-files=all || true
+            git --no-pager diff --cached || true
+            exit 1
+          fi
+
           git push origin "HEAD:refs/heads/$TARGET_BRANCH"
 
           echo "DID_COMMIT=true" >> "$GITHUB_ENV"
