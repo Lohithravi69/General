@@ -43,37 +43,65 @@ jobs:
   commit_two_files:
     runs-on: ubuntu-latest
     env:
-      TARGET_BRANCH: ${{ github.ref_name }}
       FILE_ONE: ${{ github.event.inputs.file_one }}
       FILE_TWO: ${{ github.event.inputs.file_two }}
-      COMMIT_MESSAGE: ${{ github.event.inputs.commit_message || 'chore: commit two files' }}
-      DELETE_AFTER_PUSH: ${{ github.event.inputs.delete_after_push }}
-      AUTHOR_NAME: ${{ github.event.inputs.author_name || secrets.COMMIT_AUTHOR_NAME || github.actor }}
-      AUTHOR_EMAIL: ${{ github.event.inputs.author_email || secrets.COMMIT_AUTHOR_EMAIL || 'github-actions[bot]@users.noreply.github.com' }}
+      COMMIT_MESSAGE: "${{ github.event.inputs.commit_message || 'chore: commit two files' }}"
+      DELETE_AFTER_PUSH: ${{ github.event_name == 'schedule' || github.event.inputs.delete_after_push }}
+      AUTHOR_NAME: ${{ github.event.inputs.author_name }}
+      AUTHOR_EMAIL: ${{ github.event.inputs.author_email }}
+      SECRET_AUTHOR_NAME: ${{ secrets.COMMIT_AUTHOR_NAME }}
+      SECRET_AUTHOR_EMAIL: ${{ secrets.COMMIT_AUTHOR_EMAIL }}
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: true
           fetch-depth: 0
 
+      - name: Resolve target branch
+        id: branch
+        run: |
+          set -euo pipefail
+          echo "GITHUB_REF=$GITHUB_REF"
+          echo "GITHUB_REF_NAME=$GITHUB_REF_NAME"
+          echo "Default branch (event): ${{ github.event.repository.default_branch }}"
+          echo "Checked out branch: $(git rev-parse --abbrev-ref HEAD)"
+
+          TARGET_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+          echo "Resolved TARGET_BRANCH=$TARGET_BRANCH"
+          echo "TARGET_BRANCH=$TARGET_BRANCH" >> "$GITHUB_ENV"
+
       - name: Configure git identity
         run: |
-          # Set name and email independently so partial inputs or secrets work
-          if [ -n "${AUTHOR_NAME:-}" ]; then
-            git config user.name "$AUTHOR_NAME"
-          else
-            git config user.name "github-actions[bot]"
+          set -euo pipefail
+
+          # Resolve author name: input -> secret -> actor -> hardcoded fallback.
+          NAME="${AUTHOR_NAME:-}"
+          if [ -z "$NAME" ]; then
+            NAME="${SECRET_AUTHOR_NAME:-}"
+          fi
+          if [ -z "$NAME" ]; then
+            NAME="${GITHUB_ACTOR:-github-actions[bot]}"
           fi
 
-          if [ -n "${AUTHOR_EMAIL:-}" ]; then
-            git config user.email "$AUTHOR_EMAIL"
-          else
-            git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Resolve author email: input -> secret -> hardcoded fallback.
+          # This is robust against missing/blank inputs and secrets.
+          EMAIL="${AUTHOR_EMAIL:-}"
+          if [ -z "$EMAIL" ]; then
+            EMAIL="${SECRET_AUTHOR_EMAIL:-}"
           fi
+          if [ -z "$EMAIL" ]; then
+            EMAIL="github-actions[bot]@users.noreply.github.com"
+          fi
+
+          git config user.name "$NAME"
+          git config user.email "$EMAIL"
+
+          echo "Resolved git user.name=$NAME"
+          echo "Resolved git user.email=$EMAIL"
 
       - name: Prepare files to commit
         id: prepare
@@ -118,6 +146,8 @@ jobs:
           # Debug: show commit message and length
           echo "COMMIT_MESSAGE='${COMMIT_MESSAGE}'"
           echo "COMMIT_MESSAGE_LEN=${#COMMIT_MESSAGE}"
+          echo "TARGET_BRANCH='${TARGET_BRANCH:-}'"
+          echo "Current branch: $(git rev-parse --abbrev-ref HEAD)"
 
           IFS=' ' read -r -a FILES <<< "${{ steps.prepare.outputs.FILES }}"
           echo "Prepared files: ${FILES[*]}"
@@ -140,6 +170,8 @@ jobs:
             exit 1
           fi
 
+          # Push to the resolved default branch using a safe, explicit refspec.
+          # TARGET_BRANCH is guaranteed non-empty (derived from the actual checkout).
           git push origin "HEAD:refs/heads/$TARGET_BRANCH"
 
           echo "DID_COMMIT=true" >> "$GITHUB_ENV"
@@ -173,6 +205,7 @@ jobs:
             exit 0
           fi
           git commit -m "chore: cleanup generated files"
+          echo "Pushing cleanup to TARGET_BRANCH='${TARGET_BRANCH:-}'"
           git push origin "HEAD:refs/heads/$TARGET_BRANCH"
           echo "DID_CLEANUP=true" >> "$GITHUB_ENV"
           CLEANUP_SHA=$(git rev-parse HEAD)
