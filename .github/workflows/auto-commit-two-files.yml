@@ -78,23 +78,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Resolve author name: input -> secret -> actor -> hardcoded fallback.
+          # Resolve author name: input -> secret -> default fallback
           NAME="${AUTHOR_NAME:-}"
           if [ -z "$NAME" ]; then
             NAME="${SECRET_AUTHOR_NAME:-}"
           fi
-          if [ -z "$NAME" ]; then
-            NAME="${GITHUB_ACTOR:-github-actions[bot]}"
+          if [ -z "$NAME" ] || [ "$NAME" = "github-actions[bot]" ]; then
+            NAME="Lohith Ravi"
           fi
 
-          # Resolve author email: input -> secret -> hardcoded fallback.
-          # This is robust against missing/blank inputs and secrets.
+          # Resolve author email: input -> secret -> default fallback
+          # GitHub requires matching author email for contributions to register on profile
           EMAIL="${AUTHOR_EMAIL:-}"
           if [ -z "$EMAIL" ]; then
             EMAIL="${SECRET_AUTHOR_EMAIL:-}"
           fi
-          if [ -z "$EMAIL" ]; then
-            EMAIL="github-actions[bot]@users.noreply.github.com"
+          if [ -z "$EMAIL" ] || [ "$EMAIL" = "github-actions[bot]@users.noreply.github.com" ]; then
+            EMAIL="lohitravi69@gmail.com"
           fi
 
           git config user.name "$NAME"
