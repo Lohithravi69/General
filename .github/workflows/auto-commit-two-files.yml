@@ -74,31 +74,34 @@ jobs:
           echo "Resolved TARGET_BRANCH=$TARGET_BRANCH"
           echo "TARGET_BRANCH=$TARGET_BRANCH" >> "$GITHUB_ENV"
 
-      - name: Configure git identity
-        run: |
-          set -euo pipefail
-
-          # Resolve author name: input -> secret -> default fallback
+          # Sanitize and resolve author identity (filter out dummy placeholder strings)
           NAME="${AUTHOR_NAME:-}"
-          if [ -z "$NAME" ]; then
+          if [ -z "$NAME" ] || [ "$NAME" = "Your Name" ] || [ "$NAME" = "github-actions[bot]" ]; then
             NAME="${SECRET_AUTHOR_NAME:-}"
           fi
-          if [ -z "$NAME" ] || [ "$NAME" = "github-actions[bot]" ]; then
+          if [ -z "$NAME" ] || [ "$NAME" = "Your Name" ] || [ "$NAME" = "github-actions[bot]" ]; then
             NAME="Lohith Ravi"
           fi
 
-          # Resolve author email: input -> secret -> default fallback
-          # GitHub requires matching author email for contributions to register on profile
           EMAIL="${AUTHOR_EMAIL:-}"
-          if [ -z "$EMAIL" ]; then
+          if [ -z "$EMAIL" ] || [ "$EMAIL" = "your-email@users.noreply.github.com" ] || [ "$EMAIL" = "github-actions[bot]@users.noreply.github.com" ] || [[ "$EMAIL" =~ example\.com$ ]]; then
             EMAIL="${SECRET_AUTHOR_EMAIL:-}"
           fi
-          if [ -z "$EMAIL" ] || [ "$EMAIL" = "github-actions[bot]@users.noreply.github.com" ]; then
+          if [ -z "$EMAIL" ] || [ "$EMAIL" = "your-email@users.noreply.github.com" ] || [ "$EMAIL" = "github-actions[bot]@users.noreply.github.com" ] || [[ "$EMAIL" =~ example\.com$ ]]; then
             EMAIL="lohitravi69@gmail.com"
           fi
 
+          git config --global user.name "$NAME"
+          git config --global user.email "$EMAIL"
           git config user.name "$NAME"
           git config user.email "$EMAIL"
+
+          echo "GIT_AUTHOR_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "GIT_AUTHOR_EMAIL=$EMAIL" >> "$GITHUB_ENV"
+          echo "GIT_COMMITTER_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "GIT_COMMITTER_EMAIL=$EMAIL" >> "$GITHUB_ENV"
+          echo "RESOLVED_AUTHOR_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "RESOLVED_AUTHOR_EMAIL=$EMAIL" >> "$GITHUB_ENV"
 
           echo "Resolved git user.name=$NAME"
           echo "Resolved git user.email=$EMAIL"
@@ -163,7 +166,7 @@ jobs:
           fi
 
           # Attempt commit and capture output on failure for diagnostics
-          if ! git commit -m "$COMMIT_MESSAGE"; then
+          if ! git commit --author="$RESOLVED_AUTHOR_NAME <$RESOLVED_AUTHOR_EMAIL>" -m "$COMMIT_MESSAGE"; then
             echo "git commit failed — showing git status and diff:" >&2
             git status --porcelain --untracked-files=all || true
             git --no-pager diff --cached || true
@@ -204,7 +207,7 @@ jobs:
             echo "No cleanup changes"
             exit 0
           fi
-          git commit -m "chore: cleanup generated files"
+          git commit --author="$RESOLVED_AUTHOR_NAME <$RESOLVED_AUTHOR_EMAIL>" -m "chore: cleanup generated files"
           echo "Pushing cleanup to TARGET_BRANCH='${TARGET_BRANCH:-}'"
           git push origin "HEAD:refs/heads/$TARGET_BRANCH"
           echo "DID_CLEANUP=true" >> "$GITHUB_ENV"
