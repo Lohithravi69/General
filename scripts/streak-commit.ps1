@@ -15,8 +15,8 @@
 param(
     [switch]$Push,
     [switch]$Cleanup,
-    [string]$AuthorName = "Lohith Ravi",
-    [string]$AuthorEmail = "lohitravi69@gmail.com"
+    [string]$AuthorName = "Lohith R",
+    [string]$AuthorEmail = "156739882+Lohithravi69@users.noreply.github.com"
 )
 
 Set-StrictMode -Version Latest

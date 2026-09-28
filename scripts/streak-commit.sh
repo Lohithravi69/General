@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # GitHub Streak Contribution Script (Bash / WSL / macOS / Linux)
-AUTHOR_NAME="${AUTHOR_NAME:-Lohith Ravi}"
-AUTHOR_EMAIL="${AUTHOR_EMAIL:-lohitravi69@gmail.com}"
+AUTHOR_NAME="${AUTHOR_NAME:-Lohith R}"
+AUTHOR_EMAIL="${AUTHOR_EMAIL:-156739882+Lohithravi69@users.noreply.github.com}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 cd "$REPO_DIR"

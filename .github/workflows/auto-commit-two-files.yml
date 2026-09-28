@@ -80,7 +80,7 @@ jobs:
             NAME="${SECRET_AUTHOR_NAME:-}"
           fi
           if [ -z "$NAME" ] || [ "$NAME" = "Your Name" ] || [ "$NAME" = "github-actions[bot]" ]; then
-            NAME="Lohith Ravi"
+            NAME="Lohith R"
           fi
 
           EMAIL="${AUTHOR_EMAIL:-}"
@@ -88,7 +88,7 @@ jobs:
             EMAIL="${SECRET_AUTHOR_EMAIL:-}"
           fi
           if [ -z "$EMAIL" ] || [ "$EMAIL" = "your-email@users.noreply.github.com" ] || [ "$EMAIL" = "github-actions[bot]@users.noreply.github.com" ] || [[ "$EMAIL" =~ example\.com$ ]]; then
-            EMAIL="lohitravi69@gmail.com"
+            EMAIL="156739882+Lohithravi69@users.noreply.github.com"
           fi
 
           git config --global user.name "$NAME"
